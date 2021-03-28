@@ -170,6 +170,49 @@ describe('/schedules/:scheduleId/users/:userId/comments', () => {
   });
 });
 
+describe('/schedules/:scheduleId?edit=1', () => {
+  beforeAll(() => {
+    passportStub.install(app);
+    passportStub.login({ id: 0, username: 'testuser' });
+  });
+
+  afterAll(() => {
+    passportStub.logout();
+    passportStub.uninstall(app);
+  });
+
+  test('予定が更新でき、候補が追加できる', (done) => {
+    User.upsert({ userId: 0, username: 'testuser' }).then(() => {
+      request(app)
+        .post('/schedules')
+        .send({ scheduleName: 'テスト更新予定1', memo: 'テスト更新メモ1', candidates: 'テスト更新候補1' })
+        .end((err, res) => {
+          const createdSchedulePath = res.headers.location;
+          const scheduleId = createdSchedulePath.split('/schedules/')[1];
+          // 更新がされることをテスト
+          request(app)
+            .post(`/schedules/${scheduleId}?edit=1`)
+            .send({ scheduleName: 'テスト更新予定2', memo: 'テスト更新メモ2', candidates: 'テスト更新候補2' })
+            .end((err, res) => {
+              Schedule.findByPk(scheduleId).then((s) => {
+                assert.strictEqual(s.scheduleName, 'テスト更新予定2');
+                assert.strictEqual(s.memo, 'テスト更新メモ2');
+              });
+              Candidate.findAll({
+                where: { scheduleId: scheduleId },
+                order: [['candidateId', 'ASC']]
+              }).then((candidates) => {
+                assert.strictEqual(candidates.length, 2);
+                assert.strictEqual(candidates[0].candidateName, 'テスト更新候補1');
+                assert.strictEqual(candidates[1].candidateName, 'テスト更新候補2');
+                deleteScheduleAggregate(scheduleId, done, err);
+              });
+            });
+        });
+    });
+  });
+});
+
 function deleteScheduleAggregate(scheduleId, done, err) {
   const promiseCommentDestroy = Comment.findAll({
     where: { scheduleId: scheduleId }
